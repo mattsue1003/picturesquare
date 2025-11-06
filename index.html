@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圖片猜猜看</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自訂字體 */
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+        }
+        /* 遊戲區域的背景圖片將由 JS 設置 */
+        #game-board {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            /* 確保網格佈局正確 */
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            /* 保持 1:1 的長寬比 */
+            aspect-ratio: 1 / 1;
+            /* 限制最大寬度，使其在桌面上不會過大 */
+            width: 100%;
+            max-width: 600px;
+            border: 2px solid #333;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* 遮罩格子的樣式 */
+        .tile {
+            /* 使用 flex 來置中數字 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem; /* 數字大小 (已加大) */
+            font-weight: bold;
+            color: white;
+            background-color: #FF8A65; /* 粉橘色遮罩 */
+            border: 1px solid #ffffffa0;
+            cursor: pointer;
+            transition: opacity 0.5s ease;
+            opacity: 1;
+            /* 確保文字不會被選取 */
+            user-select: none;
+        }
+        /* 被點選後的格子 */
+        .tile.revealed {
+            opacity: 0;
+            cursor: default;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-lg">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">圖片猜猜看 - 團體活動版</h1>
+
+        <!-- 1. 上傳照片區域 -->
+        <div class="mb-4">
+            <label for="photo-upload" class="block text-lg font-medium text-gray-700 mb-2">步驟一：上傳批次照片</label>
+            <input type="file" id="photo-upload" accept="image/*" multiple
+                   class="block w-full text-sm text-gray-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-lg file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-blue-50 file:text-blue-700
+                          hover:file:bg-blue-100
+                          cursor-pointer">
+            <p class="text-sm text-gray-500 mt-1">＊ 建議上傳 1:1 的正方形照片，以獲得最佳顯示效果。</p>
+        </div>
+
+        <!-- 1.5. 訊息提示區域 -->
+        <div id="message-area" class="text-center text-red-500 font-medium mb-4" style="display: none;"></div>
+
+        <!-- 2. 遊戲控制按鈕 -->
+        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+            <div class="flex gap-2">
+                <button id="prev-photo" class="py-2 px-4 bg-gray-500 text-white rounded-lg shadow hover:bg-gray-600 transition disabled:opacity-50" disabled>
+                    &larr; 上一張
+                </button>
+                <button id="next-photo" class="py-2 px-4 bg-gray-500 text-white rounded-lg shadow hover:bg-gray-600 transition disabled:opacity-50" disabled>
+                    下一張 &rarr;
+                </button>
+            </div>
+            <div class="flex gap-2">
+                <button id="reset-grid" class="py-2 px-4 bg-yellow-500 text-white rounded-lg shadow hover:bg-yellow-600 transition disabled:opacity-50" disabled>
+                    重設遮罩
+                </button>
+                <button id="reveal-answer" class="py-2 px-4 bg-green-500 text-white rounded-lg shadow hover:bg-green-600 transition disabled:opacity-50" disabled>
+                    公佈答案
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. 遊戲狀態資訊 -->
+        <div id="game-info" class="text-center text-lg font-medium text-gray-700 mb-4" style="display: none;">
+            <span id="photo-counter">照片 1 / 10</span> | 
+            <span id="tile-counter" class="text-blue-600">已掀開 0 / 16 格</span>
+            <span id="score-display" class="text-green-600 font-bold ml-4" style="display: none;"></span> <!-- 新增的分數顯示 -->
+        </div>
+
+        <!-- 4. 遊戲主要區域 -->
+        <div id="game-board-container" class="flex justify-center">
+            <!-- 遊戲格子將由 JS 動態生成並放入此處 -->
+            <div id="game-board"></div>
+        </div>
+
+        <!-- 5. 遊戲方式說明 -->
+        <div class="mt-6 text-center text-gray-600 space-y-1">
+            <h3 class="font-bold text-lg mb-2">遊戲方式</h3>
+            <p>1. 老師（主持人）請團體上傳至少 5 張照片。</p>
+            <p>2. 團體（或分組）輪流選擇 1-16 的號碼。</p>
+            <p>3. 老師點選號碼以掀開遮罩。</p>
+            <p>4. 掀開越少格子猜中，分數越高！</p>
+        </div>
+        
+    </div>
+
+    <!-- 6. 頁尾連結 -->
+    <footer class="w-full max-w-3xl mx-auto mt-6 text-center text-sm text-gray-500 space-y-2 pb-6 px-4">
+        <p>
+            <a href="https://www.facebook.com/chungmenghsiu" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 hover:underline">
+                設計者：鍾孟修 職能治療師
+            </a>
+        </p>
+        <p>
+            <a href="https://www.facebook.com/profile.php?id=100063748491881#" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 hover:underline">
+                追蹤粉絲專頁 鍾孟修Ｍatt-職能治療師
+            </a>
+        </p>
+        <p>
+            <a href="https://www.books.com.tw/products/0011022363?sloc=main" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 hover:underline">
+                新書「讓你健康不失智的體智能」
+            </a>
+        </p>
+    </footer>
+
+    <script>
+        // 獲取 DOM 元素
+        const photoUpload = document.getElementById('photo-upload');
+        const gameBoard = document.getElementById('game-board');
+        const prevPhotoBtn = document.getElementById('prev-photo');
+        const nextPhotoBtn = document.getElementById('next-photo');
+        const resetGridBtn = document.getElementById('reset-grid');
+        const revealAnswerBtn = document.getElementById('reveal-answer'); // <-- 更改 ID
+        const gameInfo = document.getElementById('game-info');
+        const photoCounter = document.getElementById('photo-counter');
+        const tileCounter = document.getElementById('tile-counter');
+        const scoreDisplay = document.getElementById('score-display'); // <-- 獲取分數顯示 DOM
+        const messageArea = document.getElementById('message-area'); // 訊息提示
+
+        // 遊戲狀態
+        let photos = []; // 儲存上傳的照片 URL
+        let currentPhotoIndex = 0; // 當前照片索引
+        let revealedTiles = 0; // 已掀開的格子數量
+
+        // 初始化遊戲格子
+        function createGrid() {
+            gameBoard.innerHTML = ''; // 清空舊格子
+            for (let i = 0; i < 16; i++) {
+                const tile = document.createElement('div');
+                tile.classList.add('tile');
+                tile.dataset.index = i; // 標記格子索引
+                tile.textContent = i + 1; // 顯示 1-16 的數字
+                
+                // 格子點擊事件
+                tile.addEventListener('click', () => {
+                    revealTile(tile);
+                });
+                
+                gameBoard.appendChild(tile);
+            }
+        }
+
+        // 掀開格子
+        function revealTile(tile) {
+            // 如果格子尚未被掀開
+            if (!tile.classList.contains('revealed')) {
+                tile.classList.add('revealed');
+                revealedTiles++;
+                updateTileCounter();
+                scoreDisplay.style.display = 'none'; // 點擊新格子時隱藏舊分數
+            }
+        }
+
+        // 處理照片上傳
+        photoUpload.addEventListener('change', async (event) => { // <-- 增加 async
+            const files = event.target.files;
+            
+            // 1. 檢查照片數量
+            if (files.length < 5) {
+                messageArea.textContent = '請至少上傳 5 張照片！';
+                messageArea.style.display = 'block';
+                
+                // 清空舊照片並禁用按鈕
+                photos.forEach(photo => URL.revokeObjectURL(photo.url));
+                photos = [];
+                currentPhotoIndex = 0;
+                
+                gameBoard.style.backgroundImage = 'none'; // 清除背景
+                resetGrid(); // 重設格子（會顯示數字）
+                gameInfo.style.display = 'none';
+                prevPhotoBtn.disabled = true;
+                nextPhotoBtn.disabled = true;
+                resetGridBtn.disabled = true;
+                revealAnswerBtn.disabled = true; // <-- 更改
+                
+                return; // 終止執行
+            }
+
+            // 數量足夠，清除錯誤訊息
+            messageArea.style.display = 'none';
+
+            // 2. 清空舊照片
+            photos.forEach(photo => URL.revokeObjectURL(photo.url)); // 釋放舊的 URL
+            photos = [];
+
+            // 3. 讀取新照片
+            Array.from(files).forEach(file => {
+                photos.push({
+                    url: URL.createObjectURL(file),
+                    name: file.name
+                });
+            });
+
+            // 4. 隨機排序照片 (Fisher-Yates Shuffle)
+            for (let i = photos.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [photos[i], photos[j]] = [photos[j], photos[i]]; // 交換
+            }
+
+            // 5. 載入第一張照片
+            currentPhotoIndex = 0;
+            // 傳入 true (isFirstLoad) 避免第一次載入時不必要的延遲
+            await loadPhoto(currentPhotoIndex, true); // <-- 增加 await 並傳入 true
+
+            // 6. 啟用按鈕
+            updateNavigationButtons();
+            resetGridBtn.disabled = false;
+            revealAnswerBtn.disabled = false; // <-- 更改
+            gameInfo.style.display = 'block';
+        });
+
+        // 載入指定索引的照片
+        async function loadPhoto(index, isFirstLoad = false) { // <-- 增加 async 並加入 isFirstLoad 參數
+            if (index < 0 || index >= photos.length) return;
+            
+            currentPhotoIndex = index;
+            const photo = photos[index];
+            
+            // 1. 先重設遮罩 (讓所有格子蓋上)
+            // 這會觸發 0.5s 的 CSS transition 動畫
+            resetGrid();
+
+            // 2. 如果不是第一次載入，等待遮罩動畫 (0.5s) 完成
+            // 這樣可以確保遮罩完全不透明後，才更換背景圖片
+            if (!isFirstLoad) {
+                // 等待 500 毫秒 (0.5s)，與 CSS transition 時間一致
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // 3. 再設定新的背景圖片 (此時遮罩已完全不透明)
+            gameBoard.style.backgroundImage = `url('${photo.url}')`;
+            
+            // 4. 更新計數器和按鈕
+            updatePhotoCounter();
+            updateNavigationButtons();
+        }
+
+        // 更新照片計數器
+        function updatePhotoCounter() {
+            photoCounter.textContent = `照片 ${currentPhotoIndex + 1} / ${photos.length}`;
+        }
+
+        // 更新格子計數器
+        function updateTileCounter() {
+            tileCounter.textContent = `已掀開 ${revealedTiles} / 16 格`;
+        }
+
+        // 更新上下張照片按鈕的狀態
+        function updateNavigationButtons() {
+            prevPhotoBtn.disabled = (currentPhotoIndex === 0);
+            nextPhotoBtn.disabled = (currentPhotoIndex === photos.length - 1 || photos.length === 0);
+        }
+
+        // 重設遮罩 (恢復所有格子)
+        function resetGrid() {
+            const tiles = gameBoard.querySelectorAll('.tile');
+            tiles.forEach(tile => {
+                tile.classList.remove('revealed');
+            });
+            revealedTiles = 0;
+            updateTileCounter();
+            scoreDisplay.style.display = 'none'; // 重設時隱藏分數
+        }
+
+        // 顯示所有格子 (公布答案並計分)
+        function revealAnswer() {
+            // 1. 根據「未打開」的遮罩數量計算分數
+            const unopenedTiles = 16 - revealedTiles;
+            let score = unopenedTiles;
+
+            /*
+            // (舊的計分邏輯)
+            let score = 0;
+            if (revealedTiles <= 4) {
+                score = 10;
+            } else if (revealedTiles <= 8) {
+                score = 5;
+            } else if (revealedTiles <= 12) {
+                score = 3;
+            } else if (revealedTiles < 16) { // 13, 14, 15
+                score = 1;
+            } else { // 16 格已全開
+                score = 0;
+            }
+            */
+
+            // 2. 掀開所有格子
+            const tiles = gameBoard.querySelectorAll('.tile');
+            tiles.forEach(tile => {
+                if (!tile.classList.contains('revealed')) {
+                    tile.classList.add('revealed');
+                }
+            });
+            revealedTiles = 16;
+            updateTileCounter();
+
+            // 3. 顯示分數
+            if (score > 0) {
+                scoreDisplay.textContent = `獲得 ${score} 分！`;
+            } else {
+                scoreDisplay.textContent = '已全部顯示 (0 分)'; // 調整 0 分時的顯示
+            }
+            scoreDisplay.style.display = 'inline'; // 顯示分數
+        }
+
+        // 按鈕事件監聽
+        prevPhotoBtn.addEventListener('click', async () => { // <-- 增加 async
+            if (currentPhotoIndex > 0) {
+                await loadPhoto(currentPhotoIndex - 1); // <-- 增加 await
+            }
+        });
+
+        nextPhotoBtn.addEventListener('click', async () => { // <-- 增加 async
+            if (currentPhotoIndex < photos.length - 1) {
+                await loadPhoto(currentPhotoIndex + 1); // <-- 增加 await
+            }
+        });
+
+        resetGridBtn.addEventListener('click', resetGrid);
+        revealAnswerBtn.addEventListener('click', revealAnswer); // <-- 更改
+
+        // 頁面載入時先建立格子
+        createGrid();
+    </script>
+</body>
+</html>
